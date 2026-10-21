@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/game_screen.dart';
+import 'screens/main_menu_screen.dart';
 
 void main() {
   runApp(const SnakeGameApp());
@@ -12,11 +12,11 @@ class SnakeGameApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Snake Neon Ultimate',
+      title: 'Snake Neon Ultimate Pro',
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF080C10),
       ),
-      home: const GameScreen(),
+      home: const MainMenuScreen(),
     );
   }
 }
