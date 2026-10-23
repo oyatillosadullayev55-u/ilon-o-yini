@@ -54,11 +54,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   int currentLevelUp = 1;
   double screenShakeOffset = 0.0;
 
-  // Ilonning katlar orasidagi silliq siljishi uchun
-  int prevSnakeLength = 3;
-  DateTime? _lastTickAt;
-  double _interpolation = 1.0;
-
   @override
   void initState() {
     super.initState();
@@ -99,7 +94,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     setState(() {
       for (int i = floatingScores.length - 1; i >= 0; i--) {
         var fs = floatingScores[i];
-        fs.yOffset -= 1.2;
+        fs.yOffset -= 0.055;
         fs.opacity -= 0.035;
         if (fs.opacity <= 0) {
           floatingScores.removeAt(i);
@@ -126,37 +121,41 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   void _spawnParticles(int index, Color color, {int count = 15}) {
     final random = Random();
-    double cx = (index % colCount) * 20.0 + 10.0;
-    double cy = (index ~/ colCount) * 20.0 + 10.0;
+    final Offset origin = _cellCentreInGridUnits(index);
 
     for (int i = 0; i < count; i++) {
       double angle = random.nextDouble() * 2 * pi;
-      double speedFactor = 1.5 + random.nextDouble() * 3.5;
+      double speedFactor = 0.06 + random.nextDouble() * 0.16;
       particles.add(
         Particle(
-          position: Offset(cx, cy),
+          position: origin,
           velocity: Offset(cos(angle) * speedFactor, sin(angle) * speedFactor),
           color: color,
-          size: 3.0 + random.nextDouble() * 4.0,
+          size: 0.12 + random.nextDouble() * 0.16,
         ),
       );
     }
   }
 
   void _spawnFloatingScore(int index, String text, Color color) {
-    double cx = (index % colCount) * 20.0 + 10.0;
-    double cy = (index ~/ colCount) * 20.0 + 10.0;
     floatingScores.add(
-      FloatingScore(text: text, position: Offset(cx, cy), color: color),
+      FloatingScore(
+        text: text,
+        position: _cellCentreInGridUnits(index),
+        color: color,
+      ),
     );
   }
+
+  /// Kat indeksini kata birlikdagi markaz koordinatasiga aylantiradi.
+  /// (Ekran piksellarini bu yerda bilmaymiz — taxta AspectRatio bilan
+  /// masshtablanadi, shuning uchun hisob kata birligida yuritiladi.)
+  Offset _cellCentreInGridUnits(int index) =>
+      Offset((index % colCount) + 0.5, (index ~/ colCount) + 0.5);
 
   void startGame() {
     setState(() {
       snake = [33, 32, 31];
-      prevSnakeLength = snake.length;
-      _lastTickAt = null;
-      _interpolation = 1.0;
       direction = Direction.right;
       nextDirection = Direction.right;
       score = 0;
@@ -227,26 +226,22 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void generateNewFood() {
-    final random = Random();
-    int newFood;
-    do {
-      newFood = random.nextInt(rowCount * colCount);
-    } while (snake.contains(newFood) || newFood == bonusFood || obstacles.contains(newFood));
-
+    final List<int> free = _freeCells();
+    if (free.isEmpty) {
+      _endGame(won: true);
+      return;
+    }
     setState(() {
-      food = newFood;
+      food = free[Random().nextInt(free.length)];
     });
   }
 
   void generateBonusFood() {
-    final random = Random();
-    int newBonus;
-    do {
-      newBonus = random.nextInt(rowCount * colCount);
-    } while (snake.contains(newBonus) || newBonus == food || obstacles.contains(newBonus));
+    final List<int> free = _freeCells();
+    if (free.isEmpty) return;
 
     setState(() {
-      bonusFood = newBonus;
+      bonusFood = free[Random().nextInt(free.length)];
     });
 
     bonusTimer?.cancel();
@@ -259,9 +254,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
+  /// Ilon, to'siqlar va mavjud ovqatlar band qilmagan katlar.
+  List<int> _freeCells() {
+    final Set<int> occupied = {...snake, ...obstacles, food, bonusFood};
+    return [
+      for (int i = 0; i < rowCount * colCount; i++)
+        if (!occupied.contains(i)) i,
+    ];
+  }
+
   void updateGame() {
     setState(() {
-      final int oldLength = snake.length;
       direction = nextDirection;
       int nextHead = getNextHeadPosition();
 
@@ -307,20 +310,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       } else {
         snake.removeLast();
       }
-
-      prevSnakeLength = oldLength;
-      _lastTickAt = DateTime.now();
-      _interpolation = 0.0;
     });
   }
 
-  Future<void> _endGame() async {
+  Future<void> _endGame({bool won = false}) async {
     timer?.cancel();
     bonusTimer?.cancel();
     gameTimer?.cancel();
-    gameState = GameState.gameOver;
-    _interpolation = 1.0;
-    screenShakeOffset = 12.0;
+    gameState = won ? GameState.won : GameState.gameOver;
+    screenShakeOffset = won ? 0.0 : 12.0;
 
     bool vib = true;
     GameStorageService.isVibrationEnabled().then((v) => vib = v);
@@ -333,8 +331,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
     await GameStorageService.updateStats(foodDelta: eatenFoodCount, snakeLength: snake.length);
 
+    // Ilon qizarib/e'tibor tortib ulgurishi uchun dialogni biroz kechiktiramiz
+    await Future.delayed(const Duration(milliseconds: 450));
+
     if (mounted) {
-      showGameOverDialog();
+      showGameOverDialog(won: won);
     }
   }
 
@@ -404,7 +405,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (newDirection == Direction.right && direction != Direction.left) nextDirection = Direction.right;
   }
 
-  void showGameOverDialog() {
+  void showGameOverDialog({bool won = false}) {
+    final Color accent = won ? Colors.greenAccent : Colors.redAccent;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -415,17 +417,30 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: Colors.redAccent, width: 1.5),
+          side: BorderSide(color: accent, width: 1.5),
         ),
-        title: const Text(
-          "O'YIN TUGADI",
+        title: Text(
+          won ? "G'ALABA!" : "O'YIN TUGADI",
           textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 22),
+          style: TextStyle(
+            color: accent,
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+          ),
         ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (won)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    "Butun taxtani to'ldirdingiz!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: accent, fontSize: 15),
+                  ),
+                ),
               Text("To'plangan ochko: $score", style: const TextStyle(color: Colors.white, fontSize: 18)),
               const SizedBox(height: 8),
               Text("Erishilgan daraja: $level", style: const TextStyle(color: Colors.amberAccent, fontSize: 16)),
@@ -486,12 +501,37 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  /// Katlar orasidagi silliq siljish foizi (0 -> 1).
-  double _currentInterpolation() {
-    if (gameState != GameState.playing || _lastTickAt == null) return _interpolation;
-    final int elapsed = DateTime.now().difference(_lastTickAt!).inMilliseconds;
-    _interpolation = (elapsed / speed).clamp(0.0, 1.0).toDouble();
-    return _interpolation;
+  /// Stol (Windows/macOS/web) uchun klaviatura boshqaruvi.
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+
+    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.keyW) {
+      changeDirection(Direction.up);
+    } else if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.keyS) {
+      changeDirection(Direction.down);
+    } else if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.keyA) {
+      changeDirection(Direction.left);
+    } else if (key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.keyD) {
+      changeDirection(Direction.right);
+    } else if (key == LogicalKeyboardKey.space) {
+      if (gameState == GameState.playing || gameState == GameState.paused) {
+        togglePause();
+      } else if (gameState == GameState.idle) {
+        startGame();
+      }
+    } else if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      if (gameState == GameState.idle) startGame();
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
   }
 
   @override
@@ -499,9 +539,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: const Color(0xFF080C10),
       body: SafeArea(
-        child: Transform.translate(
-          offset: Offset(screenShakeOffset, 0),
-          child: GestureDetector(
+        child: Focus(
+          autofocus: true,
+          onKeyEvent: _onKeyEvent,
+          child: Transform.translate(
+            offset: Offset(screenShakeOffset, 0),
+            child: GestureDetector(
             onVerticalDragUpdate: (details) {
               if (details.delta.dy < -2) changeDirection(Direction.up);
               if (details.delta.dy > 2) changeDirection(Direction.down);
@@ -541,8 +584,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       bonusFood: bonusFood,
                       direction: direction,
                       pulseValue: _pulseController.value,
-                      interpolation: _currentInterpolation(),
-                      prevLength: prevSnakeLength,
                       floatingScores: floatingScores,
                       particles: particles,
                       skinColors: skinColors,
@@ -633,11 +674,63 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
+                // Pauza pardasi
+                if (gameState == GameState.paused)
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: Colors.black.withValues(alpha: 0.72),
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  "PAUZA",
+                                  style: TextStyle(
+                                    color: Colors.amberAccent,
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 4,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                "Davom ettirish uchun tugmani yoki bo'sh joyni bosing",
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white70, fontSize: 13),
+                              ),
+                              const SizedBox(height: 18),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.amberAccent,
+                                  foregroundColor: Colors.black,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                onPressed: togglePause,
+                                icon: const Icon(Icons.play_arrow),
+                                label: const Text(
+                                  "DAVOM ETISH",
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
         ),
       ),
+    ),
     );
   }
 

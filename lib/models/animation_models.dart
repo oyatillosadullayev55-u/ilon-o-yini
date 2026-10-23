@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+/// Suzib chiquvchi ochko yozuvi. [position] va [yOffset] kata (grid)
+/// birliklarida: x 0..colCount, y 0..rowCount oraliqda.
 class FloatingScore {
   final String text;
   final Offset position;
@@ -16,6 +18,8 @@ class FloatingScore {
   });
 }
 
+/// Portlash zarachasi. [position] va [velocity] kata birliklarida,
+/// [size] esa kata tomonining ulushida (0..1).
 class Particle {
   Offset position;
   Offset velocity;

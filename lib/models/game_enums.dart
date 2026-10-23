@@ -11,7 +11,7 @@ enum GameMode {
   survival,
 }
 
-enum GameState { idle, playing, paused, gameOver }
+enum GameState { idle, playing, paused, gameOver, won }
 
 class SnakeSkinInfo {
   final String id;
