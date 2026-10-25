@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/game_storage_service.dart';
+import '../widgets/ui_kit.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -41,146 +42,216 @@ class _StatsScreenState extends State<StatsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final best = [classicHigh, endlessHigh, timeAttackHigh, survivalHigh]
+        .reduce((a, b) => a > b ? a : b);
+    final records = <(String, int, Color)>[
+      ('Klassik rejim', classicHigh, const Color(0xFF00E5A0)),
+      ('Cheksiz rejim', endlessHigh, const Color(0xFF35C4FF)),
+      ('Time Attack', timeAttackHigh, const Color(0xFFFFC857)),
+      ('Survival (Omon qolish)', survivalHigh, const Color(0xFFFF5364)),
+    ];
+
     return Scaffold(
-      backgroundColor: const Color(0xFF080C10),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF161B22),
-        title: const Text(
-          "STATISTIKA VA REKORDLAR",
-          style: TextStyle(
-            color: Colors.cyanAccent,
-            fontWeight: FontWeight.bold,
+      backgroundColor: const Color(0xFF05070C),
+      body: SafeArea(
+        child: NeonBackground(
+          accent: const Color(0xFF35C4FF),
+          intensity: 0.8,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 14, 0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                    ),
+                    const Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: NeonTitle('STATISTIKA', fontSize: 22),
+                      ),
+                    ),
+                    StatPill(
+                      icon: Icons.emoji_events_rounded,
+                      label: "Rekord $best",
+                      color: const Color(0xFFFFC857),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
+                  children: [
+                    const SectionLabel("Umumiy statistika"),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _StatCard(
+                          label: "O'yinlar",
+                          value: stats['totalGames'] ?? 0,
+                          icon: Icons.sports_esports_rounded,
+                          color: const Color(0xFF00E5A0),
+                        ),
+                        const SizedBox(width: 10),
+                        _StatCard(
+                          label: 'Yeb qo\'yilgan',
+                          value: stats['totalFood'] ?? 0,
+                          icon: Icons.restaurant_rounded,
+                          color: const Color(0xFFFFC857),
+                        ),
+                        const SizedBox(width: 10),
+                        _StatCard(
+                          label: 'Eng uzun',
+                          value: stats['longestSnake'] ?? 3,
+                          icon: Icons.straighten_rounded,
+                          color: const Color(0xFF35C4FF),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const SectionLabel('Rejim rekordlari'),
+                    const SizedBox(height: 10),
+                    for (final (title, score, color) in records)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _RecordRow(
+                          title: title,
+                          score: score,
+                          color: color,
+                          fraction: best == 0 ? 0.0 : score / best,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        iconTheme: const IconThemeData(color: Colors.cyanAccent),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text(
-            "Umumiy ko'rsatkichlar",
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _buildStatCard(
-                "O'yinlar",
-                "${stats['totalGames']}",
-                Icons.sports_esports,
-                Colors.greenAccent,
-              ),
-              const SizedBox(width: 12),
-              _buildStatCard(
-                "Yeb qo'yilgan",
-                "${stats['totalFood']}",
-                Icons.restaurant,
-                Colors.amberAccent,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _buildStatCard(
-                "Eng uzun ilon",
-                "${stats['longestSnake']}",
-                Icons.straighten,
-                Colors.cyanAccent,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            "Rejimlar bo'yicha rekordlar",
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildModeRecord("Klassik rejim", classicHigh, Colors.greenAccent),
-          _buildModeRecord("Cheksiz rejim", endlessHigh, Colors.cyanAccent),
-          _buildModeRecord("Time Attack", timeAttackHigh, Colors.amberAccent),
-          _buildModeRecord(
-            "Survival (Omon qolish)",
-            survivalHigh,
-            Colors.redAccent,
-          ),
-        ],
       ),
     );
   }
+}
 
-  Widget _buildStatCard(
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
+class _StatCard extends StatelessWidget {
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color color;
+
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF161B22),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
+      child: GlassPanel(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        radius: 18,
+        blur: 8,
+        borderColor: color.withValues(alpha: 0.34),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                color: color,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 8),
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: value.toDouble()),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeOutCubic,
+              builder: (context, animated, _) => Text(
+                animated.round().toString(),
+                style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
+              ),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildModeRecord(String title, int score, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+class _RecordRow extends StatelessWidget {
+  final String title;
+  final int score;
+  final Color color;
+  final double fraction;
+
+  const _RecordRow({
+    required this.title,
+    required this.score,
+    required this.color,
+    required this.fraction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      radius: 18,
+      blur: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+          Row(
+            children: [
+              Icon(Icons.flag_rounded, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                "$score",
+                style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+            ],
           ),
-          Text(
-            "$score",
-            style: TextStyle(
-              color: color,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: fraction.clamp(0.0, 1.0)),
+              duration: const Duration(milliseconds: 800),
+              curve: Curves.easeOutCubic,
+              builder: (context, v, _) => LinearProgressIndicator(
+                value: v,
+                minHeight: 6,
+                backgroundColor: Colors.white.withValues(alpha: 0.06),
+                valueColor: AlwaysStoppedAnimation(color),
+              ),
             ),
           ),
         ],

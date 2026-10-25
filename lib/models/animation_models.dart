@@ -1,25 +1,25 @@
 import 'package:flutter/material.dart';
 
-/// Suzib chiquvchi ochko yozuvi. [position] va [yOffset] kata (grid)
-/// birliklarida: x 0..colCount, y 0..rowCount oraliqda.
+/// Suzib chiquvchi ochko yozuvi. [position] kata (grid) birliklarida:
+/// x 0..colCount, y 0..rowCount. [z] — pol ustidagi balandlik (kata ulushida).
 class FloatingScore {
   final String text;
   final Offset position;
   final Color color;
   double opacity;
-  double yOffset;
+  double z;
 
   FloatingScore({
     required this.text,
     required this.position,
     required this.color,
     this.opacity = 1.0,
-    this.yOffset = 0.0,
+    this.z = 0.6,
   });
 }
 
 /// Portlash zarachasi. [position] va [velocity] kata birliklarida,
-/// [size] esa kata tomonining ulushida (0..1).
+/// [z]/[vz] — balandlik va undagi tezlik, [size] kata tomonining ulushi.
 class Particle {
   Offset position;
   Offset velocity;
@@ -27,6 +27,8 @@ class Particle {
   double size;
   double opacity;
   double life;
+  double z;
+  double vz;
 
   Particle({
     required this.position,
@@ -35,5 +37,7 @@ class Particle {
     required this.size,
     this.opacity = 1.0,
     this.life = 1.0,
+    this.z = 0.45,
+    this.vz = 0.09,
   });
 }

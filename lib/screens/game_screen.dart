@@ -6,8 +6,10 @@ import '../models/direction.dart';
 import '../models/animation_models.dart';
 import '../models/game_enums.dart';
 import '../services/game_storage_service.dart';
-import '../widgets/game_board.dart';
+import '../theme/app_theme.dart';
+import '../widgets/game_board_3d.dart';
 import '../widgets/score_board.dart';
+import '../widgets/ui_kit.dart';
 
 class GameScreen extends StatefulWidget {
   final GameMode initialMode;
@@ -47,8 +49,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   // Animation controllers & lists
   late AnimationController _pulseController;
   late AnimationController _animationLoopController;
+  late AnimationController _deathController;
+  late AnimationController _startController;
   final List<FloatingScore> floatingScores = [];
   final List<Particle> particles = [];
+
+  // Harakat interpolatsiyasi (qadamlar orasini silliq to'ldiradi)
+  int prevSnakeLength = 3;
+  DateTime? _lastTickAt;
 
   bool showLevelUpBanner = false;
   int currentLevelUp = 1;
@@ -71,6 +79,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     )..repeat();
 
     _animationLoopController.addListener(_updateAnimations);
+
+    _deathController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+
+    _startController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    );
   }
 
   Future<void> _loadSkinAndHighScore() async {
@@ -94,8 +112,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     setState(() {
       for (int i = floatingScores.length - 1; i >= 0; i--) {
         var fs = floatingScores[i];
-        fs.yOffset -= 0.055;
-        fs.opacity -= 0.035;
+        fs.z += 0.055;
+        fs.opacity -= 0.03;
         if (fs.opacity <= 0) {
           floatingScores.removeAt(i);
         }
@@ -104,9 +122,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       for (int i = particles.length - 1; i >= 0; i--) {
         var p = particles[i];
         p.position += p.velocity;
-        p.opacity -= 0.04;
-        p.life -= 0.04;
-        p.size *= 0.96;
+        p.z += p.vz;
+        p.vz -= 0.014; // tortishish
+        if (p.z < 0.05 && p.vz < 0) {
+          p.z = 0.05;
+          p.vz = -p.vz * 0.42; // yerdan sakrab qaytadi
+          p.velocity *= 0.6;
+        }
+        p.opacity -= 0.035;
+        p.life -= 0.035;
+        p.size *= 0.975;
         if (p.life <= 0 || p.opacity <= 0) {
           particles.removeAt(i);
         }
@@ -125,13 +150,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
     for (int i = 0; i < count; i++) {
       double angle = random.nextDouble() * 2 * pi;
-      double speedFactor = 0.06 + random.nextDouble() * 0.16;
+      double speedFactor = 0.05 + random.nextDouble() * 0.12;
       particles.add(
         Particle(
           position: origin,
           velocity: Offset(cos(angle) * speedFactor, sin(angle) * speedFactor),
           color: color,
-          size: 0.12 + random.nextDouble() * 0.16,
+          size: 0.10 + random.nextDouble() * 0.14,
+          z: 0.35 + random.nextDouble() * 0.35,
+          vz: 0.05 + random.nextDouble() * 0.11,
         ),
       );
     }
@@ -148,8 +175,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   /// Kat indeksini kata birlikdagi markaz koordinatasiga aylantiradi.
-  /// (Ekran piksellarini bu yerda bilmaymiz — taxta AspectRatio bilan
-  /// masshtablanadi, shuning uchun hisob kata birligida yuritiladi.)
   Offset _cellCentreInGridUnits(int index) =>
       Offset((index % colCount) + 0.5, (index ~/ colCount) + 0.5);
 
@@ -168,6 +193,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       particles.clear();
       obstacles.clear();
       gameState = GameState.playing;
+      prevSnakeLength = snake.length;
+      _lastTickAt = DateTime.now();
+      _deathController.value = 0.0;
+      _startController.forward(from: 0.0);
 
       if (gameMode == GameMode.obstacle || gameMode == GameMode.survival) {
         _generateObstacles();
@@ -254,7 +283,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
-  /// Ilon, to'siqlar va mavjud ovqatlar band qilmagan katlar.
   List<int> _freeCells() {
     final Set<int> occupied = {...snake, ...obstacles, food, bonusFood};
     return [
@@ -264,6 +292,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void updateGame() {
+    final int oldLength = snake.length;
     setState(() {
       direction = nextDirection;
       int nextHead = getNextHeadPosition();
@@ -286,7 +315,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         GameStorageService.isVibrationEnabled().then((v) => vib = v);
         if (vib) HapticFeedback.lightImpact();
 
-        _spawnParticles(food, skinColors.first, count: 18);
+        _spawnParticles(food, skinColors.first, count: 22);
         _spawnFloatingScore(food, gameMode == GameMode.timeAttack ? "+20" : "+10", skinColors.first);
 
         if (eatenFoodCount % 5 == 0) {
@@ -302,7 +331,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         score += 30;
         GameStorageService.addCoins(5);
         GameStorageService.addXp(25);
-        _spawnParticles(bonusFood, Colors.amberAccent, count: 25);
+        _spawnParticles(bonusFood, Colors.amberAccent, count: 30);
         _spawnFloatingScore(bonusFood, "+30", Colors.amberAccent);
         bonusFood = -1;
 
@@ -310,7 +339,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       } else {
         snake.removeLast();
       }
+
+      prevSnakeLength = oldLength;
+      _lastTickAt = DateTime.now();
     });
+  }
+
+  double _currentInterpolation() {
+    if (gameState != GameState.playing || _lastTickAt == null) return 1.0;
+    final elapsed = DateTime.now().difference(_lastTickAt!).inMilliseconds;
+    return (elapsed / speed).clamp(0.0, 1.0).toDouble();
   }
 
   Future<void> _endGame({bool won = false}) async {
@@ -318,7 +356,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     bonusTimer?.cancel();
     gameTimer?.cancel();
     gameState = won ? GameState.won : GameState.gameOver;
-    screenShakeOffset = won ? 0.0 : 12.0;
+    screenShakeOffset = won ? 0.0 : 14.0;
+    if (!won) {
+      _deathController.forward(from: 0.0);
+    }
 
     bool vib = true;
     GameStorageService.isVibrationEnabled().then((v) => vib = v);
@@ -331,7 +372,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
     await GameStorageService.updateStats(foodDelta: eatenFoodCount, snakeLength: snake.length);
 
-    // Ilon qizarib/e'tibor tortib ulgurishi uchun dialogni biroz kechiktiramiz
     await Future.delayed(const Duration(milliseconds: 450));
 
     if (mounted) {
@@ -406,87 +446,108 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void showGameOverDialog({bool won = false}) {
-    final Color accent = won ? Colors.greenAccent : Colors.redAccent;
+    final Color accent = won ? const Color(0xFF00E5A0) : const Color(0xFFFF5364);
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF161B22),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-        contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: accent, width: 1.5),
-        ),
-        title: Text(
-          won ? "G'ALABA!" : "O'YIN TUGADI",
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: accent,
-            fontWeight: FontWeight.bold,
-            fontSize: 22,
-          ),
-        ),
-        content: SingleChildScrollView(
+      barrierColor: const Color(0xC804070C),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: GlassPanel(
+          padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+          radius: 26,
+          blur: 18,
+          borderColor: accent.withValues(alpha: 0.55),
+          glowColor: accent,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Icon(
+                won ? Icons.emoji_events_rounded : Icons.sentiment_very_dissatisfied_rounded,
+                color: accent,
+                size: 32,
+              ),
+              const SizedBox(height: 8),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: NeonTitle(
+                  won ? "G'ALABA!" : "O'YIN TUGADI",
+                  fontSize: 24,
+                  colors: [accent, accent],
+                ),
+              ),
               if (won)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(top: 6),
                   child: Text(
                     "Butun taxtani to'ldirdingiz!",
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: accent, fontSize: 15),
+                    style: TextStyle(color: accent, fontSize: 13),
                   ),
                 ),
-              Text("To'plangan ochko: $score", style: const TextStyle(color: Colors.white, fontSize: 18)),
-              const SizedBox(height: 8),
-              Text("Erishilgan daraja: $level", style: const TextStyle(color: Colors.amberAccent, fontSize: 16)),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _DialogStat(
+                      label: 'To\'plangan ochko',
+                      value: score,
+                      color: accent,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _DialogStat(
+                      label: 'Erishilgan daraja',
+                      value: level,
+                      color: const Color(0xFFFFC857),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                        foregroundColor: Colors.white70,
+                      ),
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop();
+                        Navigator.of(context).pop();
+                      },
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          "BOSH MENYU",
+                          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Center(
+                      child: NeonButton(
+                        label: "QAYTA BOSHLASH",
+                        fontSize: 13,
+                        colors: [accent, Color.lerp(accent, Colors.white, 0.3)!],
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        onPressed: () {
+                          Navigator.of(dialogContext).pop();
+                          startGame();
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    Navigator.of(context).pop(); // Return to main menu
-                  },
-                  child: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text("BOSH MENYU", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.greenAccent,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    startGame();
-                  },
-                  child: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text("QAYTA BOSHLASH", style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-            ],
-          )
-        ],
       ),
     );
   }
@@ -498,10 +559,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     gameTimer?.cancel();
     _pulseController.dispose();
     _animationLoopController.dispose();
+    _deathController.dispose();
+    _startController.dispose();
     super.dispose();
   }
 
-  /// Stol (Windows/macOS/web) uchun klaviatura boshqaruvi.
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
@@ -537,9 +599,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF080C10),
+      backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: Focus(
+        child: NeonBackground(
+          accent: skinColors.first,
+          accent2: skinColors.length > 1 ? skinColors[1] : skinColors.first,
+          intensity: 0.5,
+          child: Focus(
           autofocus: true,
           onKeyEvent: _onKeyEvent,
           child: Transform.translate(
@@ -576,60 +642,64 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                           style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                       ),
-                    GameBoard(
-                      rowCount: rowCount,
-                      colCount: colCount,
-                      snake: snake,
-                      food: food,
-                      bonusFood: bonusFood,
-                      direction: direction,
-                      pulseValue: _pulseController.value,
-                      floatingScores: floatingScores,
-                      particles: particles,
-                      skinColors: skinColors,
-                      obstacles: obstacles,
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.92, end: 1.0).animate(
+                            CurvedAnimation(parent: _startController, curve: Curves.elasticOut),
+                          ),
+                          child: SnakeScene3D(
+                            rowCount: rowCount,
+                            colCount: colCount,
+                            snake: snake,
+                            food: food,
+                            bonusFood: bonusFood,
+                            direction: direction,
+                            pulseValue: _pulseController.value,
+                            timeValue: _animationLoopController.value * 60,
+                            interpolation: _currentInterpolation(),
+                            prevLength: prevSnakeLength,
+                            deathGlow: _deathController.value,
+                            floatingScores: floatingScores,
+                            particles: particles,
+                            skinColors: skinColors,
+                            obstacles: obstacles,
+                            wraps: gameMode == GameMode.endless || gameMode == GameMode.survival,
+                          ),
+                        ),
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12.0, left: 16, right: 16),
                       child: gameState == GameState.idle
-                          ? AnimatedBuilder(
-                              animation: _pulseController,
-                              builder: (context, child) {
-                                double scale = 1.0 + 0.03 * sin(_pulseController.value * 2 * pi);
-                                return Transform.scale(
-                                  scale: scale,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(18),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: skinColors.first.withValues(alpha: 0.35 + 0.15 * sin(_pulseController.value * 2 * pi)),
-                                          blurRadius: 20,
-                                          spreadRadius: 2,
-                                        ),
-                                      ],
-                                    ),
-                                    child: ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: skinColors.first,
-                                        foregroundColor: Colors.black,
-                                        padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 16),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                                        elevation: 12,
-                                      ),
-                                      onPressed: startGame,
-                                      child: const Text(
-                                        "B O S H L A S H",
-                                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
+                          ? Center(
+                              child: NeonButton(
+                                label: "B O S H L A S H",
+                                icon: Icons.play_arrow_rounded,
+                                onPressed: startGame,
+                                colors: skinColors,
+                                fontSize: 18,
+                                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+                              ),
                             )
                           : _buildControlPanel(),
                     ),
                   ],
+                ),
+                // Game Over Red Flash Overlay
+                AnimatedBuilder(
+                  animation: _deathController,
+                  builder: (context, _) {
+                    if (_deathController.value == 0.0) return const SizedBox.shrink();
+                    return Positioned.fill(
+                      child: IgnorePointer(
+                        child: Container(
+                          color: Colors.redAccent.withValues(alpha: (1.0 - _deathController.value) * 0.45),
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 // Level Up Banner Overlay
                 if (showLevelUpBanner)
@@ -678,48 +748,37 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 if (gameState == GameState.paused)
                   Positioned.fill(
                     child: ColoredBox(
-                      color: Colors.black.withValues(alpha: 0.72),
+                      color: Colors.black.withValues(alpha: 0.55),
                       child: Center(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
+                          child: GlassPanel(
+                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 22),
+                            borderColor: AppTheme.gold.withValues(alpha: 0.45),
+                            glowColor: AppTheme.gold,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const NeonTitle(
                                   "PAUZA",
-                                  style: TextStyle(
-                                    color: Colors.amberAccent,
-                                    fontSize: 30,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 4,
-                                  ),
+                                  fontSize: 28,
+                                  colors: [AppTheme.gold, Color(0xFFFF8A3D)],
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                "Davom ettirish uchun tugmani yoki bo'sh joyni bosing",
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.white70, fontSize: 13),
-                              ),
-                              const SizedBox(height: 18),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.amberAccent,
-                                  foregroundColor: Colors.black,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  "Davom ettirish uchun tugmani yoki bo'sh joyni bosing",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.white70, fontSize: 13),
                                 ),
-                                onPressed: togglePause,
-                                icon: const Icon(Icons.play_arrow),
-                                label: const Text(
-                                  "DAVOM ETISH",
-                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                const SizedBox(height: 16),
+                                NeonButton(
+                                  label: "DAVOM ETISH",
+                                  icon: Icons.play_arrow_rounded,
+                                  onPressed: togglePause,
+                                  colors: const [AppTheme.gold, Color(0xFFFF8A3D)],
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -730,51 +789,116 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           ),
         ),
       ),
-    ),
+      ),
+      ),
     );
   }
 
   Widget _buildControlPanel() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        IconButton(
-          onPressed: togglePause,
-          iconSize: 36,
-          color: Colors.amberAccent,
-          icon: Icon(gameState == GameState.playing ? Icons.pause_circle_filled : Icons.play_circle_filled),
-        ),
-        Column(
-          children: [
-            _buildDpadBtn(Icons.keyboard_arrow_up, () => changeDirection(Direction.up)),
-            Row(
-              children: [
-                _buildDpadBtn(Icons.keyboard_arrow_left, () => changeDirection(Direction.left)),
-                const SizedBox(width: 40),
-                _buildDpadBtn(Icons.keyboard_arrow_right, () => changeDirection(Direction.right)),
-              ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            onPressed: togglePause,
+            iconSize: 38,
+            color: AppTheme.gold,
+            icon: Icon(gameState == GameState.playing
+                ? Icons.pause_circle_filled
+                : Icons.play_circle_filled),
+          ),
+          Column(
+            children: [
+              _buildDpadBtn(Icons.keyboard_arrow_up, () => changeDirection(Direction.up)),
+              Row(
+                children: [
+                  _buildDpadBtn(Icons.keyboard_arrow_left, () => changeDirection(Direction.left)),
+                  const SizedBox(width: 44),
+                  _buildDpadBtn(Icons.keyboard_arrow_right, () => changeDirection(Direction.right)),
+                ],
+              ),
+              _buildDpadBtn(Icons.keyboard_arrow_down, () => changeDirection(Direction.down)),
+            ],
+          ),
+          SizedBox(
+            width: 44,
+            child: Text(
+              "${speed}ms",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: skinColors.first.withValues(alpha: 0.75), fontSize: 11, fontWeight: FontWeight.w800),
             ),
-            _buildDpadBtn(Icons.keyboard_arrow_down, () => changeDirection(Direction.down)),
-          ],
-        ),
-        const SizedBox(width: 48),
-      ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildDpadBtn(IconData icon, VoidCallback onPressed) {
-    return Container(
-      margin: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white10),
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.white.withValues(alpha: 0.10), Colors.white.withValues(alpha: 0.03)],
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: skinColors.first.withValues(alpha: 0.28)),
+        ),
+        child: IconButton(
+          icon: Icon(icon, color: Colors.white70),
+          onPressed: onPressed,
+          iconSize: 24,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        ),
       ),
-      child: IconButton(
-        icon: Icon(icon, color: Colors.white70),
-        onPressed: onPressed,
-        iconSize: 24,
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+    );
+  }
+}
+
+class _DialogStat extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+
+  const _DialogStat({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: value.toDouble()),
+            duration: const Duration(milliseconds: 700),
+            curve: Curves.easeOutCubic,
+            builder: (context, animated, _) => Text(
+              animated.round().toString(),
+              style: TextStyle(
+                color: color,
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+          ),
+        ],
       ),
     );
   }

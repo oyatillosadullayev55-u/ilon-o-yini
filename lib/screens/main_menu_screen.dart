@@ -1,10 +1,14 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
-import '../models/game_enums.dart';
+import '../models/animation_models.dart';
+import '../models/direction.dart';
 import '../services/game_storage_service.dart';
+import '../widgets/game_board_3d.dart';
+import '../widgets/ui_kit.dart';
 import 'game_screen.dart';
+import 'settings_screen.dart';
 import 'shop_screen.dart';
 import 'stats_screen.dart';
-import 'settings_screen.dart';
 
 class MainMenuScreen extends StatefulWidget {
   const MainMenuScreen({super.key});
@@ -17,6 +21,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   GameMode selectedMode = GameMode.classic;
   int coins = 0;
   int level = 1;
+
+  static const List<(GameMode, String, Color)> _modes = [
+    (GameMode.classic, 'Klassik', Color(0xFF00E5A0)),
+    (GameMode.endless, 'Cheksiz', Color(0xFF35C4FF)),
+    (GameMode.timeAttack, 'Time Attack', Color(0xFFFFC857)),
+    (GameMode.obstacle, 'Obstacle', Color(0xFFFF5364)),
+    (GameMode.survival, 'Survival', Color(0xFFB57BFF)),
+  ];
 
   @override
   void initState() {
@@ -34,222 +46,284 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     });
   }
 
+  Future<void> _open(Widget page) async {
+    await Navigator.push(context, FadeScaleRoute(child: page));
+    _loadUserProgress();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final accent = _modes.firstWhere((m) => m.$1 == selectedMode).$3;
     return Scaffold(
-      backgroundColor: const Color(0xFF080C10),
+      backgroundColor: const Color(0xFF05070C),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            // Qisqa ekranlarda Spacerlar manba bo'lmaydi: kontent o'rgatiladi
-            final double gap = constraints.maxHeight > 620 ? 28 : 12;
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight - 40),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+        child: NeonBackground(
+          accent: accent,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Top Bar (Coins & Level)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildPill(
-                          Icons.monetization_on,
-                          Colors.amberAccent,
-                          "$coins",
-                        ),
-                        _buildPill(
-                          Icons.bolt,
-                          Colors.greenAccent,
-                          "Daraja $level",
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: gap * 2),
-                    // Title
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          colors: [Colors.greenAccent, Colors.cyanAccent],
-                        ).createShader(bounds),
-                        child: const Text(
-                          "SNAKE ULTIMATE",
-                          style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 2,
-                          ),
-                        ),
+                    StatPill(icon: Icons.monetization_on, label: "$coins", color: Color(0xFFFFC857)),
+                    StatPill(icon: Icons.bolt, label: "Daraja $level", color: accent),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const _FloatingTitle(),
+                const SizedBox(height: 6),
+                const Center(child: SectionLabel('Neon 3D Arcade')),
+                const SizedBox(height: 16),
+                GlassPanel(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                  borderColor: accent.withValues(alpha: 0.34),
+                  glowColor: accent,
+                  blur: 6,
+                  child: Column(
+                    children: [
+                      SizedBox(height: 168, child: const _DemoScene()),
+                      const SizedBox(height: 8),
+                      const SectionLabel('Jonli 3D demo'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const SectionLabel("Rejimni tanlang"),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final (mode, label, color) in _modes)
+                      _ModeChip(
+                        label: label,
+                        color: color,
+                        selected: selectedMode == mode,
+                        onTap: () => setState(() => selectedMode = mode),
                       ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Center(
+                  child: NeonButton(
+                    label: 'B O S H L A S H',
+                    icon: Icons.play_arrow_rounded,
+                    fontSize: 18,
+                    padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 16),
+                    colors: [accent, Color.lerp(accent, Colors.white, 0.28)!],
+                    onPressed: () => _open(GameScreen(initialMode: selectedMode)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    GlassButton(
+                      label: "Do'kon",
+                      icon: Icons.storefront_rounded,
+                      color: const Color(0xFFFFC857),
+                      onPressed: () => _open(const ShopScreen()),
                     ),
-                    const SizedBox(height: 8),
-                    const FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        "PRO ARCADE EDITION",
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontSize: 13,
-                          letterSpacing: 4,
-                        ),
-                      ),
+                    const SizedBox(width: 8),
+                    GlassButton(
+                      label: 'Statistika',
+                      icon: Icons.insights_rounded,
+                      color: const Color(0xFF35C4FF),
+                      onPressed: () => _open(const StatsScreen()),
                     ),
-                    SizedBox(height: gap * 2),
-                    // Mode Selector
-                    const Text(
-                      "O'YIN REJIMINI TANLANG",
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        _buildModeChip("Klassik", GameMode.classic, Colors.greenAccent),
-                        _buildModeChip("Cheksiz", GameMode.endless, Colors.cyanAccent),
-                        _buildModeChip("Time Attack", GameMode.timeAttack, Colors.amberAccent),
-                        _buildModeChip("Obstacle", GameMode.obstacle, Colors.redAccent),
-                        _buildModeChip("Survival", GameMode.survival, Colors.purpleAccent),
-                      ],
-                    ),
-                    SizedBox(height: gap * 2),
-                    // Start Button
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.greenAccent,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 60,
-                          vertical: 16,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        elevation: 10,
-                      ),
-                      onPressed: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                GameScreen(initialMode: selectedMode),
-                          ),
-                        );
-                        _loadUserProgress();
-                      },
-                      child: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          "B O S H L A S H",
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Navigation Buttons (Shop, Stats, Settings)
-                    Row(
-                      children: [
-                        _buildNavButton(Icons.store, "Do'kon", () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const ShopScreen(),
-                            ),
-                          );
-                          _loadUserProgress();
-                        }),
-                        const SizedBox(width: 8),
-                        _buildNavButton(Icons.bar_chart, "Statistika", () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const StatsScreen(),
-                            ),
-                          );
-                        }),
-                        const SizedBox(width: 8),
-                        _buildNavButton(Icons.settings, "Sozlama", () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const SettingsScreen(),
-                            ),
-                          );
-                        }),
-                      ],
+                    const SizedBox(width: 8),
+                    GlassButton(
+                      label: 'Sozlama',
+                      icon: Icons.settings_rounded,
+                      color: const Color(0xFFB57BFF),
+                      onPressed: () => _open(const SettingsScreen()),
                     ),
                   ],
                 ),
-              ),
-            );
-          },
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Sarlavha — sekin suzib yuruvchi neon matn.
+class _FloatingTitle extends StatefulWidget {
+  const _FloatingTitle();
+
+  @override
+  State<_FloatingTitle> createState() => _FloatingTitleState();
+}
+
+class _FloatingTitleState extends State<_FloatingTitle>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _t = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 5),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _t.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _t,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, sin(_t.value * 2 * pi) * 3.5),
+        child: child,
+      ),
+      child: const FittedBox(
+        fit: BoxFit.scaleDown,
+        child: NeonTitle('SNAKE 3D', fontSize: 40),
+      ),
+    );
+  }
+}
+
+/// Rejim tugmasi (glass chip).
+class _ModeChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ModeChip({
+    required this.label,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? LinearGradient(colors: [color, color.withValues(alpha: 0.62)])
+              : null,
+          color: selected ? null : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: selected ? 1 : 0.32), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: selected ? 0.40 : 0.0),
+              blurRadius: 16,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.black : Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.4,
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildPill(IconData icon, Color color, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(color: color, fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
+/// Bosh menyudagi jonli ilon aylanasi — haqiqiy 3D renderer orqali.
+class _DemoScene extends StatefulWidget {
+  const _DemoScene();
+
+  @override
+  State<_DemoScene> createState() => _DemoSceneState();
+}
+
+class _DemoSceneState extends State<_DemoScene> with SingleTickerProviderStateMixin {
+  static const int rows = 8;
+  static const int cols = 12;
+  static const int body = 7;
+
+  late final AnimationController _t = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 4200),
+  )..repeat();
+
+  late final List<int> _route = _buildRoute();
+
+  List<int> _buildRoute() {
+    final cells = <int>[];
+    for (int c = 1; c <= cols - 2; c++) {
+      cells.add(1 * cols + c);
+    }
+    for (int r = 2; r <= rows - 2; r++) {
+      cells.add(r * cols + (cols - 2));
+    }
+    for (int c = cols - 3; c >= 1; c--) {
+      cells.add((rows - 2) * cols + c);
+    }
+    for (int r = rows - 3; r >= 2; r--) {
+      cells.add(r * cols + 1);
+    }
+    return cells;
   }
 
-  Widget _buildModeChip(String label, GameMode mode, Color color) {
-    final isSelected = selectedMode == mode;
-    return ChoiceChip(
-      label: Text(label),
-      selected: isSelected,
-      selectedColor: color,
-      backgroundColor: const Color(0xFF161B22),
-      labelStyle: TextStyle(
-        color: isSelected ? Colors.black : Colors.white70,
-        fontWeight: FontWeight.bold,
-        fontSize: 12,
-      ),
-      onSelected: (_) => setState(() => selectedMode = mode),
-    );
+  @override
+  void dispose() {
+    _t.dispose();
+    super.dispose();
   }
 
-  Widget _buildNavButton(IconData icon, String label, VoidCallback onPressed) {
-    return Expanded(
-      child: ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF161B22),
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: Colors.white10),
-          ),
-        ),
-        onPressed: onPressed,
-        icon: Icon(icon, size: 16, color: Colors.greenAccent),
-        label: Text(label, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis),
-      ),
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _t,
+      builder: (context, _) {
+        final loop = _route.length;
+        final travel = _t.value * loop * 1.4;
+        final head = (travel.truncate() % loop + loop) % loop;
+        final frac = travel - travel.truncate();
+        final snake = [for (int i = 0; i < body; i++) _route[(head - i + loop * 4) % loop]];
+        return SnakeScene3D(
+          rowCount: rows,
+          colCount: cols,
+          snake: snake,
+          food: _route[(head + 5) % loop],
+          bonusFood: -1,
+          direction: Direction.right,
+          pulseValue: _t.value,
+          timeValue: _t.value * 24,
+          interpolation: frac,
+          prevLength: body,
+          floatingScores: [
+            FloatingScore(
+              text: '+10',
+              position: const Offset(6.5, 2.5),
+              color: const Color(0xFF00E5A0),
+              opacity: 0.55,
+            ),
+          ],
+          particles: [
+            Particle(
+              position: const Offset(9.5, 4.5),
+              velocity: const Offset(0.01, 0.0),
+              color: const Color(0xFF35C4FF),
+              size: 0.14,
+              opacity: 0.6,
+            ),
+          ],
+          skinColors: const [Color(0xFF00E5A0), Color(0xFF35C4FF)],
+          wraps: true,
+          radius: 16,
+        );
+      },
     );
   }
 }
